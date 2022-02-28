@@ -1,5 +1,5 @@
 /*  =========================================================================
-    fty_mc_server - Computation server implementation
+    fty_metric_compute - 
 
     Copyright (C) 2016 - 2020 Eaton
 
@@ -20,19 +20,18 @@
 */
 
 #pragma once
-#include <czmq.h>
-#include "fty_metric_compute.h"
 
-//  Add your own public definitions here, if you need them
-#define AGENT_CM_COUNT  "x-cm-count"    // how many measurements are there
-#define AGENT_CM_SUM    "x-cm-sum"      // sum of the values
-#define AGENT_CM_TYPE   "x-cm-type"     // type of computation (min/max/arithmetic_mean)
-#define AGENT_CM_STEP   "x-cm-step"     // computation step (in seconds)
-#define AGENT_CM_LASTTS "x-cm-last-ts"  // timestamp of last metric
+#include "cmstats.h"
+#include "cmsteps.h"
+#include <malamute.h>
 
-void startThreadMetricPull(cm_t* cm);
-
-void fty_metric_compute_metric_pull(zsock_t* pipe, void* args);
-
-//  fty_mc_server actor
-void fty_mc_server (zsock_t *pipe, void *args);
+// It is a "CM" entity
+typedef struct _cm_t
+{
+    char*         name;     // server name
+    cmstats_t*    stats;    // computed statictics for all types and steps
+    cmsteps_t*    steps;    // info about supported steps
+    zlist_t*      types;    // info about supported statistic types (min, max, avg)
+    mlm_client_t* client;   // malamute client
+    char*         filename; // state file name
+} cm_t;

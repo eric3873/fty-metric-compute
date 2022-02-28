@@ -24,6 +24,7 @@ etn_target(static ${PROJECT_NAME}-lib
         fty_proto
         fty_shm
         mlm
+        pthread
     PRIVATE
 )
 

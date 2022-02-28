@@ -19,6 +19,7 @@
     =========================================================================
 */
 
+#include "fty_metric_compute.h"
 #include "fty_mc_server.h"
 #include <fty_log.h>
 #include <fty_proto.h>
@@ -26,6 +27,51 @@
 #define ACTOR_NAME "fty-metric-compute"
 #define AGENT_CONF "/etc/fty-metric-compute/fty-metric-compute.cfg"
 static const char* DEFAULT_ENDPOINT = "ipc://@/malamute";
+
+// TODO: move to class sometime
+
+/// Destroy the "CM" entity
+void cm_destroy(cm_t** self_p)
+{
+    if (*self_p) {
+        cm_t* self = *self_p;
+
+        // free structure items
+        mlm_client_destroy(&self->client);
+        zlist_destroy(&self->types);
+        cmsteps_destroy(&self->steps);
+        cmstats_destroy(&self->stats);
+        zstr_free(&self->name);
+        zstr_free(&self->filename);
+
+        // free structure itself
+        free(self);
+        *self_p = nullptr;
+    }
+}
+
+/// Create new empty not verbose "CM" entity
+cm_t* cm_new(const char* name)
+{
+    assert(name);
+    cm_t* self = reinterpret_cast<cm_t*>(zmalloc(sizeof(cm_t)));
+    if (self) {
+        self->name = strdup(name);
+        if (self->name)
+            self->stats = cmstats_new();
+        if (self->stats)
+            self->steps = cmsteps_new();
+        if (self->steps)
+            self->types = zlist_new();
+        if (self->types)
+            self->client = mlm_client_new();
+        if (self->client)
+            zlist_autofree(self->types);
+        //else
+            //cm_destroy(&self);
+    }
+    return self;
+}
 
 int main(int argc, char* argv[])
 {
@@ -82,8 +128,11 @@ int main(int argc, char* argv[])
         ftylog_setVeboseMode(ftylog_getInstance());
     }
     log_info("%s - started connected to %s", ACTOR_NAME, endpoint);
+    
+    cm_t* cm = cm_new(const_cast<char*>(ACTOR_NAME));
 
-    zactor_t* cm_server = zactor_new(fty_mc_server, const_cast<char*>(ACTOR_NAME));
+    //zactor_t* cm_server = zactor_new(fty_mc_server, const_cast<char*>(ACTOR_NAME));
+    zactor_t* cm_server = zactor_new(fty_mc_server, reinterpret_cast<void*>(cm));
     zstr_sendx(cm_server, "TYPES", "min", "max", "arithmetic_mean", "consumption", nullptr);
     zstr_sendx(cm_server, "STEPS", "15m", "30m", "1h", "8h", "24h", "7d", "30d", nullptr);
     // TODO: Make this configurable, runtime and build-time default
@@ -91,9 +140,12 @@ int main(int argc, char* argv[])
     zstr_sendx(cm_server, "CONNECT", endpoint, nullptr);
     // zstr_sendx (cm_server, "PRODUCER", FTY_PROTO_STREAM_METRICS, nullptr);
     zstr_sendx(cm_server, "CONSUMER", FTY_PROTO_STREAM_ASSETS, ".*", nullptr);
-    zstr_sendx(cm_server, "CREATE_PULL", nullptr);
+    //zstr_sendx(cm_server, "CREATE_PULL", nullptr);
     // zstr_sendx (cm_server, "CONSUMER", FTY_PROTO_STREAM_METRICS,
     // "(^realpower.default.*|.*temperature.*|.*humidity.*)", nullptr);
+    
+    //zactor_t* cm_pull = zactor_new(fty_metric_compute_metric_pull, reinterpret_cast<void*>(cm));
+    startThreadMetricPull(cm);
 
     // src/malamute.c, under MPL license
     while (true) {
@@ -107,7 +159,9 @@ int main(int argc, char* argv[])
         }
     }
 
+    //zactor_destroy(&cm_pull);
     zactor_destroy(&cm_server);
+    cm_destroy(&cm);    
 
     log_info("END: fty_agent_cm is stopped");
     return 0;
